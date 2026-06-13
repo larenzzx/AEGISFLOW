@@ -78,6 +78,20 @@ export default function App() {
   const [showKeyWarning, setShowKeyWarning] = useState(false);
   const [warningCallback, setWarningCallback] = useState<{ action: () => void } | null>(null);
 
+  const [successModalOpen, setSuccessModalOpen] = useState(false);
+  const [successModalContent, setSuccessModalContent] = useState({ title: "", message: "" });
+  const [analysisLoadingOpen, setAnalysisLoadingOpen] = useState(false);
+  const [analysisLoadingMessage, setAnalysisLoadingMessage] = useState("");
+
+  const [deleteConfirmationOpen, setDeleteConfirmationOpen] = useState(false);
+  const [itemToDelete, setItemToDelete] = useState<string | null>(null);
+  const [clearConfirmationOpen, setClearConfirmationOpen] = useState(false);
+
+  const triggerSuccessModal = (title: string, message: string) => {
+    setSuccessModalContent({ title, message });
+    setSuccessModalOpen(true);
+  };
+
   const isSimulatedMode = !apiKeys.virusTotal && !apiKeys.abuseIPDB && !apiKeys.alienVaultOTX;
 
   // Sample data templates
@@ -155,6 +169,7 @@ Date: Sat, 13 Jun 2026 01:05:00 -0700`;
     setApiKeys(keys);
     setSettingsOpen(false);
     addActivityLog("Threat Intelligence API key configurations updated.", "success");
+    triggerSuccessModal("API Keys Configured", "Your threat intelligence API keys have been saved successfully. AegisFlow is now configured to fetch live reputation metrics.");
   };
 
   // Trigger IOC Extraction and enrichment (with API key check)
@@ -175,6 +190,8 @@ Date: Sat, 13 Jun 2026 01:05:00 -0700`;
 
   const runTriageScan = async () => {
     addActivityLog("Executing IOC Log Triage audit...", "info");
+    setAnalysisLoadingMessage("Parsing payload and querying reputation datasets...");
+    setAnalysisLoadingOpen(true);
     setIsProcessing(true);
     setSelectedReport(null);
     setSelectedNode(null);
@@ -195,6 +212,7 @@ Date: Sat, 13 Jun 2026 01:05:00 -0700`;
       
       const mal = reports.filter(r => r.status === "malicious").length;
       const susp = reports.filter(r => r.status === "suspicious").length;
+      const safe = reports.filter(r => r.status === "safe").length;
       
       if (reports.length > 0) {
         setSelectedReport(reports[0]);
@@ -221,9 +239,17 @@ Date: Sat, 13 Jun 2026 01:05:00 -0700`;
       if (mal > 0) {
         addActivityLog(`ALERT: ${mal} malicious indicators detected on host!`, "danger");
       }
+
+      setAnalysisLoadingOpen(false);
+      triggerSuccessModal(
+        "Triage Complete",
+        `IOC Log Triage finished successfully. Discovered ${mal} malicious files/hosts, ${susp} warnings, and ${safe} clean indicators.`
+      );
     } catch (err) {
       console.error("Enrichment failed", err);
       addActivityLog("IOC Enrichment query failed.", "danger");
+      setAnalysisLoadingOpen(false);
+      triggerSuccessModal("Triage Failed", "Indicator lookup encountered a connection or query parsing error.");
     } finally {
       setIsProcessing(false);
     }
@@ -247,53 +273,79 @@ Date: Sat, 13 Jun 2026 01:05:00 -0700`;
 
   const runParseHeaders = () => {
     addActivityLog("Executing SMTP Routing pathway audit...", "info");
+    setAnalysisLoadingMessage("Reconstructing server relay timeline and auditing alignments...");
+    setAnalysisLoadingOpen(true);
     setIsProcessing(true);
 
-    try {
-      const report = parseEmailHeaders(headerText);
-      setPhishingReport(report);
-      
-      const mal = report.verdict === "malicious" ? 1 : 0;
-      const susp = report.verdict === "suspicious" ? 1 : 0;
+    setTimeout(() => {
+      try {
+        const report = parseEmailHeaders(headerText);
+        setPhishingReport(report);
+        
+        const mal = report.verdict === "malicious" ? 1 : 0;
+        const susp = report.verdict === "suspicious" ? 1 : 0;
 
-      const newIncident: IncidentHistoryItem = {
-        id: `INC-${Date.now().toString().slice(-6)}`,
-        timestamp: new Date().toLocaleString(),
-        type: "phishing",
-        inputExcerpt: headerText.substring(0, 60) + "...",
-        inputText: headerText,
-        reports: [],
-        phishingReport: report,
-        maliciousCount: mal,
-        warningsCount: susp
-      };
-      
-      const updatedHistory = [newIncident, ...incidentHistory].slice(0, 100);
-      setIncidentHistory(updatedHistory);
-      localStorage.setItem("aegisflow_history", JSON.stringify(updatedHistory));
+        const newIncident: IncidentHistoryItem = {
+          id: `INC-${Date.now().toString().slice(-6)}`,
+          timestamp: new Date().toLocaleString(),
+          type: "phishing",
+          inputExcerpt: headerText.substring(0, 60) + "...",
+          inputText: headerText,
+          reports: [],
+          phishingReport: report,
+          maliciousCount: mal,
+          warningsCount: susp
+        };
+        
+        const updatedHistory = [newIncident, ...incidentHistory].slice(0, 100);
+        setIncidentHistory(updatedHistory);
+        localStorage.setItem("aegisflow_history", JSON.stringify(updatedHistory));
 
-      addActivityLog(`SMTP Audit complete. SPF: ${report.spf.status} | DKIM: ${report.dkim.status} | DMARC: ${report.dmarc.status}`, report.verdict === "malicious" ? "danger" : report.verdict === "suspicious" ? "warning" : "success");
-    } catch (e) {
-      console.error("Phishing parsing failed", e);
-      addActivityLog("SMTP Header analysis failed.", "danger");
-    } finally {
-      setIsProcessing(false);
-    }
+        addActivityLog(`SMTP Audit complete. SPF: ${report.spf.status} | DKIM: ${report.dkim.status} | DMARC: ${report.dmarc.status}`, report.verdict === "malicious" ? "danger" : report.verdict === "suspicious" ? "warning" : "success");
+        
+        setAnalysisLoadingOpen(false);
+        triggerSuccessModal(
+          "SMTP Audit Complete",
+          `Email header audit finished. SPF: ${report.spf.status} | DKIM: ${report.dkim.status} | DMARC: ${report.dmarc.status}. Verdict: ${report.verdict.toUpperCase()}.`
+        );
+      } catch (e) {
+        console.error("Phishing parsing failed", e);
+        addActivityLog("SMTP Header analysis failed.", "danger");
+        setAnalysisLoadingOpen(false);
+        triggerSuccessModal("Audit Failed", "Failed to parse SMTP email headers. Please check form input.");
+      } finally {
+        setIsProcessing(false);
+      }
+    }, 1200);
   };
 
   // Clear Session History
   const clearHistory = () => {
+    setClearConfirmationOpen(true);
+  };
+
+  const confirmClearHistory = () => {
     setIncidentHistory([]);
     localStorage.removeItem("aegisflow_history");
     addActivityLog("Triage incident history database cleared.", "warning");
+    setClearConfirmationOpen(false);
+    triggerSuccessModal("History Cleared", "All triaged logs, email audits, and session drafts have been successfully deleted.");
   };
 
   // Delete a specific history item
   const deleteHistoryItem = (id: string) => {
+    setItemToDelete(id);
+    setDeleteConfirmationOpen(true);
+  };
+
+  const confirmDeleteHistoryItem = (id: string) => {
     const updated = incidentHistory.filter(item => item.id !== id);
     setIncidentHistory(updated);
     localStorage.setItem("aegisflow_history", JSON.stringify(updated));
     addActivityLog(`Incident entry ${id} deleted from database.`, "warning");
+    setDeleteConfirmationOpen(false);
+    setItemToDelete(null);
+    triggerSuccessModal("Incident Deleted", `Incident record ${id} was successfully removed from your history database.`);
   };
 
   // Save triage content as draft in history
@@ -314,6 +366,7 @@ Date: Sat, 13 Jun 2026 01:05:00 -0700`;
     setIncidentHistory(updatedHistory);
     localStorage.setItem("aegisflow_history", JSON.stringify(updatedHistory));
     addActivityLog(`Saved log draft ${newIncident.id} in history log.`, "success");
+    triggerSuccessModal("Log Draft Saved", `Triage logs have been logged to dashboard history as ${newIncident.id}.`);
   };
 
   // Save phishing header content as draft in history
@@ -334,6 +387,7 @@ Date: Sat, 13 Jun 2026 01:05:00 -0700`;
     setIncidentHistory(updatedHistory);
     localStorage.setItem("aegisflow_history", JSON.stringify(updatedHistory));
     addActivityLog(`Saved phishing header draft ${newIncident.id} in history log.`, "success");
+    triggerSuccessModal("Email Draft Saved", `SMTP email headers have been logged to dashboard history as ${newIncident.id}.`);
   };
 
   // Load history item back to active workspaces
@@ -641,6 +695,119 @@ ${threatReports.filter(r => r.status === "malicious" && r.type === "ip").map(r =
                     CONFIGURE API KEYS
                   </Button>
                 </div>
+              </div>
+            </DialogContent>
+          </Dialog>
+
+          {/* Global Success Notification Dialog */}
+          <Dialog open={successModalOpen} onOpenChange={setSuccessModalOpen}>
+            <DialogContent className="bg-card text-foreground border-primary/20 max-w-xs border-glow-green text-center">
+              <DialogHeader className="flex flex-col items-center gap-2">
+                <div className="size-12 rounded-full bg-primary/10 border border-primary/30 flex items-center justify-center glow-green mb-1">
+                  <Check className="size-6 text-primary glow-green" />
+                </div>
+                <DialogTitle className="font-mono text-primary uppercase text-[13px] tracking-wider glow-green">
+                  {successModalContent.title}
+                </DialogTitle>
+                <DialogDescription className="text-xs text-slate-300 leading-relaxed font-sans pt-1">
+                  {successModalContent.message}
+                </DialogDescription>
+              </DialogHeader>
+              <div className="flex justify-center pt-2 font-mono">
+                <Button 
+                  onClick={() => setSuccessModalOpen(false)}
+                  className="bg-primary hover:bg-primary/80 text-background text-xs px-6 py-1.5 font-bold tracking-wider"
+                >
+                  CONFIRM
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
+
+          {/* Analysis Loading State Dialog */}
+          <Dialog open={analysisLoadingOpen} onOpenChange={() => {}}>
+            <DialogContent className="bg-card text-foreground border-primary/20 max-w-xs border-glow-green text-center">
+              <DialogHeader className="flex flex-col items-center gap-3">
+                <RefreshCw className="size-8 animate-spin text-primary glow-green mb-1" />
+                <DialogTitle className="font-mono text-primary uppercase text-xs tracking-wider glow-green animate-pulse">
+                  SYSTEM ANALYZING
+                </DialogTitle>
+                <DialogDescription className="text-[10px] text-slate-300 font-mono leading-relaxed pt-1">
+                  {analysisLoadingMessage}
+                </DialogDescription>
+              </DialogHeader>
+            </DialogContent>
+          </Dialog>
+
+          {/* Delete Single Item Confirmation Dialog */}
+          <Dialog open={deleteConfirmationOpen} onOpenChange={setDeleteConfirmationOpen}>
+            <DialogContent className="bg-card text-foreground border-destructive/20 max-w-xs text-center border-glow-red">
+              <DialogHeader className="flex flex-col items-center gap-2">
+                <div className="size-12 rounded-full bg-destructive/10 border border-destructive/30 flex items-center justify-center glow-red mb-1">
+                  <AlertTriangle className="size-6 text-destructive glow-red" />
+                </div>
+                <DialogTitle className="font-mono text-destructive uppercase text-xs tracking-wider glow-red">
+                  DELETE RECORD?
+                </DialogTitle>
+                <DialogDescription className="text-[11px] text-slate-300 leading-relaxed font-sans pt-1">
+                  Are you sure you want to permanently delete investigation record <span className="text-destructive font-mono font-bold">{itemToDelete}</span>? This action cannot be undone.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="flex gap-2 justify-center pt-3 font-mono text-[10px]">
+                <Button 
+                  variant="outline"
+                  onClick={() => {
+                    setDeleteConfirmationOpen(false);
+                    setItemToDelete(null);
+                  }}
+                  className="border-border hover:bg-secondary text-[10px] px-3.5 h-7"
+                >
+                  CANCEL
+                </Button>
+                <Button 
+                  onClick={() => {
+                    if (itemToDelete) {
+                      confirmDeleteHistoryItem(itemToDelete);
+                    }
+                  }}
+                  className="bg-destructive hover:bg-destructive/80 text-white text-[10px] px-3.5 h-7 font-bold"
+                >
+                  DELETE RECORD
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
+
+          {/* Clear All History Confirmation Dialog */}
+          <Dialog open={clearConfirmationOpen} onOpenChange={setClearConfirmationOpen}>
+            <DialogContent className="bg-card text-foreground border-destructive/20 max-w-xs text-center border-glow-red">
+              <DialogHeader className="flex flex-col items-center gap-2">
+                <div className="size-12 rounded-full bg-destructive/10 border border-destructive/30 flex items-center justify-center glow-red mb-1">
+                  <AlertTriangle className="size-6 text-destructive glow-red" />
+                </div>
+                <DialogTitle className="font-mono text-destructive uppercase text-xs tracking-wider glow-red">
+                  CLEAR ALL HISTORY?
+                </DialogTitle>
+                <DialogDescription className="text-[11px] text-slate-300 leading-relaxed font-sans pt-1">
+                  Are you sure you want to delete your entire triage and email investigation history? All session logs and drafts will be lost.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="flex gap-2 justify-center pt-3 font-mono text-[10px]">
+                <Button 
+                  variant="outline"
+                  onClick={() => setClearConfirmationOpen(false)}
+                  className="border-border hover:bg-secondary text-[10px] px-3.5 h-7"
+                >
+                  CANCEL
+                </Button>
+                <Button 
+                  onClick={() => {
+                    confirmClearHistory();
+                  }}
+                  className="bg-destructive hover:bg-destructive/80 text-white text-[10px] px-3.5 h-7 font-bold"
+                >
+                  CLEAR ALL
+                </Button>
               </div>
             </DialogContent>
           </Dialog>

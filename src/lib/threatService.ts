@@ -223,12 +223,53 @@ export async function enrichIndicator(indicator: string, type: ThreatReport["typ
     }
   }
 
-  // Evaluate final status from aggregate score
-  if (score > 60) {
+  // Evaluate final status from specific metrics across all threat intelligence sources
+  let isMalicious = false;
+  let isSuspicious = false;
+
+  // 1. Evaluate VirusTotal: 4+ engines is malicious, 1-3 is suspicious
+  if (sources.virusTotal && sources.virusTotal.score !== "ERROR") {
+    const [malicious] = sources.virusTotal.score.split("/").map(Number);
+    if (malicious >= 4) {
+      isMalicious = true;
+    } else if (malicious >= 1) {
+      isSuspicious = true;
+    }
+  }
+
+  // 2. Evaluate AbuseIPDB: 50%+ confidence is malicious, 10%+ is suspicious
+  if (sources.abuseIPDB && sources.abuseIPDB.lastReported !== "API_ERROR") {
+    if (sources.abuseIPDB.score >= 50) {
+      isMalicious = true;
+    } else if (sources.abuseIPDB.score >= 10) {
+      isSuspicious = true;
+    }
+  }
+
+  // 3. Evaluate AlienVault OTX: 3+ pulses is malicious, 1-2 pulses is suspicious
+  if (sources.alienVaultOTX && !sources.alienVaultOTX.tags.includes("OTX_ERROR")) {
+    if (sources.alienVaultOTX.pulses >= 3) {
+      isMalicious = true;
+    } else if (sources.alienVaultOTX.pulses >= 1) {
+      isSuspicious = true;
+    }
+  }
+
+  // 4. Evaluate overall aggregate score fallback
+  if (score >= 60) {
+    isMalicious = true;
+  } else if (score >= 15) {
+    isSuspicious = true;
+  }
+
+  // Map status and normalize score displays for the UI
+  if (isMalicious) {
     status = "malicious";
+    score = Math.max(score, 70);
     details = `Threat verification confirmed. Identified as a high-risk malicious ${type} with high confidence levels.`;
-  } else if (score > 15) {
+  } else if (isSuspicious) {
     status = "suspicious";
+    score = Math.max(score, 30);
     details = `Suspicious indicator. Detections found in global blacklists, potential association with scanning or anonymous relays.`;
   } else {
     status = "safe";

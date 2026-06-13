@@ -420,10 +420,16 @@ Date: Sat, 13 Jun 2026 01:05:00 -0700`;
     }
   };
 
-  // Statistics summaries
-  const malCount = threatReports.filter(r => r.status === "malicious").length;
-  const suspCount = threatReports.filter(r => r.status === "suspicious").length;
-  const safeCount = threatReports.filter(r => r.status === "safe").length;
+  // Active scan statistics summaries (includes active log triage and active phishing audit)
+  const activeMalCount = threatReports.filter(r => r.status === "malicious").length + (phishingReport && phishingReport.verdict === "malicious" ? 1 : 0);
+  const activeSuspCount = threatReports.filter(r => r.status === "suspicious").length + (phishingReport && phishingReport.verdict === "suspicious" ? 1 : 0);
+  const activeSafeCount = threatReports.filter(r => r.status === "safe").length + (phishingReport && phishingReport.verdict === "safe" ? 1 : 0);
+
+  // Cumulative totals across the entire incident history log database
+  const totalMalicious = incidentHistory.reduce((acc, item) => acc + item.maliciousCount, 0);
+  const totalWarnings = incidentHistory.reduce((acc, item) => acc + item.warningsCount, 0);
+  const totalIndicators = incidentHistory.reduce((acc, item) => acc + (item.type === "triage" ? item.reports.length : 1), 0);
+  const totalThreatRatio = totalIndicators > 0 ? Math.round((totalMalicious / totalIndicators) * 100) : 0;
 
   // Render nodes for Threat Graph SVG
   const generateGraphData = () => {
@@ -479,7 +485,7 @@ Date: Sat, 13 Jun 2026 01:05:00 -0700`;
     const content = `AEGISFLOW INCIDENT REPORT & PLAYBOOK
 Timestamp: ${new Date().toISOString()}
 Indicators analyzed: ${threatReports.length}
-Malicious: ${malCount} | Suspicious: ${suspCount} | Safe: ${safeCount}
+Malicious: ${activeMalCount} | Suspicious: ${activeSuspCount} | Safe: ${activeSafeCount}
 
 DETAILED IOC REPORT:
 ${threatReports.map(r => `- ${r.indicator} [${r.type.toUpperCase()}] status: ${r.status.toUpperCase()} (Score: ${r.score}%)
@@ -637,11 +643,11 @@ ${threatReports.filter(r => r.status === "malicious" && r.type === "ip").map(r =
           </div>
 
           <div className="flex items-center gap-4 text-xs font-mono">
-            <span className="text-destructive flex items-center gap-1 bg-destructive/10 px-2.5 py-1 rounded border border-destructive/20">
-              <ShieldAlert className="size-3.5" /> {malCount} Malicious
+            <span className="text-destructive flex items-center gap-1 bg-destructive/10 px-2.5 py-1 rounded border border-destructive/20" title="Active workspace malicious detections">
+              <ShieldAlert className="size-3.5" /> {activeMalCount} Active Malicious
             </span>
-            <span className="text-amber-500 flex items-center gap-1 bg-amber-500/10 px-2.5 py-1 rounded border border-amber-500/20">
-              <AlertTriangle className="size-3.5 animate-pulse" /> {suspCount} Warnings
+            <span className="text-amber-500 flex items-center gap-1 bg-amber-500/10 px-2.5 py-1 rounded border border-amber-500/20" title="Active workspace warnings">
+              <AlertTriangle className="size-3.5 animate-pulse" /> {activeSuspCount} Active Warnings
             </span>
           </div>
 
@@ -841,8 +847,8 @@ ${threatReports.filter(r => r.status === "malicious" && r.type === "ip").map(r =
                     <CardTitle className="font-mono text-xs text-destructive tracking-widest uppercase">CRITICAL DETECTIONS</CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <div className="text-3xl font-mono font-bold text-destructive glow-red">{malCount}</div>
-                    <p className="text-xs text-slate-400 mt-2">Active malicious indicators discovered in current triage session.</p>
+                    <div className="text-3xl font-mono font-bold text-destructive glow-red">{totalMalicious}</div>
+                    <p className="text-xs text-slate-400 mt-2">Total malicious indicators detected across all session logs.</p>
                   </CardContent>
                 </Card>
 
@@ -852,8 +858,8 @@ ${threatReports.filter(r => r.status === "malicious" && r.type === "ip").map(r =
                     <CardTitle className="font-mono text-xs text-amber-500 tracking-widest uppercase">SUSPICIOUS WARNINGS</CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <div className="text-3xl font-mono font-bold text-amber-500">{suspCount}</div>
-                    <p className="text-xs text-slate-400 mt-2">Indicators flagged with moderate threat confidence.</p>
+                    <div className="text-3xl font-mono font-bold text-amber-500">{totalWarnings}</div>
+                    <p className="text-xs text-slate-400 mt-2">Total warning indicators detected in this session's database.</p>
                   </CardContent>
                 </Card>
 
@@ -864,9 +870,9 @@ ${threatReports.filter(r => r.status === "malicious" && r.type === "ip").map(r =
                   </CardHeader>
                   <CardContent>
                     <div className="text-3xl font-mono font-bold text-primary glow-green">
-                      {threatReports.length > 0 ? Math.round((malCount / threatReports.length) * 100) : 0}%
+                      {totalThreatRatio}%
                     </div>
-                    <p className="text-xs text-slate-400 mt-2">Calculated priority weight of current triage indicators.</p>
+                    <p className="text-xs text-slate-400 mt-2">Calculated priority weight of all triaged indicators.</p>
                   </CardContent>
                 </Card>
 
@@ -1732,7 +1738,7 @@ ${threatReports.filter(r => r.status === "malicious" && r.type === "ip").map(r =
                           <p className="mb-2"><strong>INCIDENT TIMELINE SUMMARY:</strong></p>
                           <p className="mb-2">
                             An automated AegisFlow telemetry parsing audit identified <strong>{threatReports.length} indicators</strong>. 
-                            Security checks confirmed <strong>{malCount} malicious components</strong>.
+                            Security checks confirmed <strong>{activeMalCount} malicious components</strong>.
                           </p>
                           <ul className="list-disc pl-4 flex flex-col gap-1.5">
                             {threatReports.filter(r => r.status === "malicious").map((r, i) => (

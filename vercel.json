@@ -1,0 +1,16 @@
+{
+  "rewrites": [
+    {
+      "source": "/api/virustotal/(.*)",
+      "destination": "https://www.virustotal.com/api/v3/$1"
+    },
+    {
+      "source": "/api/abuseipdb/(.*)",
+      "destination": "https://api.abuseipdb.com/api/v2/$1"
+    },
+    {
+      "source": "/api/alienvault/(.*)",
+      "destination": "https://otx.alienvault.com/api/v1/$1"
+    }
+  ]
+}

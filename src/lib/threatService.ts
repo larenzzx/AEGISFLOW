@@ -82,7 +82,7 @@ export async function enrichIndicator(indicator: string, type: ThreatReport["typ
   // 1. QUERY ABUSEIPDB (IPs only)
   if (type === "ip" && keys?.abuseIPDB) {
     try {
-      const res = await fetch(`https://api.abuseipdb.com/api/v2/check?ipAddress=${cleanIndicator}`, {
+      const res = await fetch(`/api/abuseipdb/check?ipAddress=${cleanIndicator}`, {
         headers: { "Key": keys.abuseIPDB, "Accept": "application/json" }
       });
       if (res.ok) {
@@ -95,9 +95,22 @@ export async function enrichIndicator(indicator: string, type: ThreatReport["typ
           country: info.countryCode
         };
         score = Math.max(score, info.abuseConfidenceScore);
+      } else {
+        sources.abuseIPDB = {
+          reports: 0,
+          lastReported: "API_ERROR",
+          score: 0,
+          country: "??"
+        };
+        if (res.status === 401 || res.status === 403) {
+          details = "AbuseIPDB API key authentication failed. Verify your credentials in settings.";
+        } else {
+          details = `AbuseIPDB lookup failed (HTTP status ${res.status}).`;
+        }
       }
     } catch (e) {
       console.error("AbuseIPDB API fetch failed", e);
+      details = "Failed to reach AbuseIPDB proxy gateway.";
     }
   }
 
@@ -111,7 +124,7 @@ export async function enrichIndicator(indicator: string, type: ThreatReport["typ
 
     if (vtEndpoint) {
       try {
-        const res = await fetch(`https://www.virustotal.com/api/v3/${vtEndpoint}`, {
+        const res = await fetch(`/api/virustotal/${vtEndpoint}`, {
           headers: { "x-apikey": keys.virusTotal }
         });
         if (res.ok) {
@@ -137,9 +150,21 @@ export async function enrichIndicator(indicator: string, type: ThreatReport["typ
           // Update aggregated score
           const vtPercentage = Math.round((malicious / (total || 1)) * 100);
           score = Math.max(score, vtPercentage);
+        } else {
+          sources.virusTotal = {
+            score: "ERROR",
+            scanned: new Date().toISOString().split("T")[0],
+            detected: []
+          };
+          if (res.status === 401 || res.status === 403) {
+            details = "VirusTotal API key authentication failed. Verify your key configurations.";
+          } else {
+            details = `VirusTotal query failed (HTTP status ${res.status}).`;
+          }
         }
       } catch (e) {
         console.error("VirusTotal API fetch failed", e);
+        details = "Failed to reach VirusTotal proxy gateway.";
       }
     }
   }
@@ -154,7 +179,7 @@ export async function enrichIndicator(indicator: string, type: ThreatReport["typ
 
     if (otxType) {
       try {
-        const res = await fetch(`https://otx.alienvault.com/api/v1/indicators/${otxType}/${cleanIndicator}/general`, {
+        const res = await fetch(`/api/alienvault/indicators/${otxType}/${cleanIndicator}/general`, {
           headers: { "X-OTX-API-KEY": keys.alienVaultOTX }
         });
         if (res.ok) {
@@ -180,9 +205,20 @@ export async function enrichIndicator(indicator: string, type: ThreatReport["typ
           if (pulses > 0) {
             score = Math.max(score, Math.min(100, 30 + pulses * 10));
           }
+        } else {
+          sources.alienVaultOTX = {
+            pulses: 0,
+            tags: ["OTX_ERROR"]
+          };
+          if (res.status === 401 || res.status === 403) {
+            details = "AlienVault OTX API key authentication failed. Verify your key settings.";
+          } else {
+            details = `AlienVault OTX lookup failed (HTTP status ${res.status}).`;
+          }
         }
       } catch (e) {
         console.error("AlienVault OTX API fetch failed", e);
+        details = "Failed to reach AlienVault OTX proxy gateway.";
       }
     }
   }
